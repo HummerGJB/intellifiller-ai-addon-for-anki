@@ -1,4 +1,7 @@
-import httpx
+import json
+import urllib.error
+import urllib.request
+import urllib.parse
 
 class GeminiClient:
     def __init__(self, api_key, model="gemini-1.5-flash"):
@@ -17,18 +20,28 @@ class GeminiClient:
             }]
         }
         
+        query = urllib.parse.urlencode({"key": self.api_key})
+        url = f"{self.base_url}?{query}"
+        payload = json.dumps(data).encode("utf-8")
+        request = urllib.request.Request(
+            url,
+            data=payload,
+            headers=headers,
+            method="POST",
+        )
+
         try:
-            response = httpx.post(
-                self.base_url,
-                headers=headers,
-                params={"key": self.api_key},
-                json=data,
-                timeout=timeout
-            )
-            response.raise_for_status()
-            result = response.json()
-            # Extract text from the response structure
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                body = response.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="replace")
+            raise Exception(f"HTTP {e.code} from Gemini: {err_body}")
+        except urllib.error.URLError as e:
+            raise Exception(f"Network error contacting Gemini: {e}")
+
+        try:
+            result = json.loads(body)
             # Response format: { "candidates": [ { "content": { "parts": [ { "text": "..." } ] } } ] }
-            return result['candidates'][0]['content']['parts'][0]['text']
+            return result["candidates"][0]["content"]["parts"][0]["text"]
         except Exception as e:
-            raise Exception(f"Error calling Gemini API: {str(e)}")
+            raise Exception(f"Error parsing Gemini response: {str(e)}")

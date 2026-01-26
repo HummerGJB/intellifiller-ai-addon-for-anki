@@ -1,5 +1,6 @@
 import json
-import httpx
+import urllib.error
+import urllib.request
 
 class SimpleAnthropicClient:
     def __init__(self, api_key, model="claude-haiku-4-5"):
@@ -20,14 +21,25 @@ class SimpleAnthropicClient:
             "messages": [{"role": "user", "content": prompt}]
         }
         
+        payload = json.dumps(data).encode("utf-8")
+        request = urllib.request.Request(
+            self.base_url,
+            data=payload,
+            headers=headers,
+            method="POST",
+        )
+
         try:
-            response = httpx.post(
-                self.base_url,
-                headers=headers,
-                json=data,
-                timeout=timeout
-            )
-            response.raise_for_status()
-            return response.json()['content'][0]['text']
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                body = response.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="replace")
+            raise Exception(f"HTTP {e.code} from Anthropic: {err_body}")
+        except urllib.error.URLError as e:
+            raise Exception(f"Network error contacting Anthropic: {e}")
+
+        try:
+            data = json.loads(body)
+            return data["content"][0]["text"]
         except Exception as e:
-            raise Exception(f"Error calling Anthropic API: {str(e)}")
+            raise Exception(f"Error parsing Anthropic response: {str(e)}")

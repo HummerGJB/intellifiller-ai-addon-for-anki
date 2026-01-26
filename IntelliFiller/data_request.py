@@ -1,6 +1,9 @@
+import json
 import re
 import sys
 import os
+import urllib.error
+import urllib.request
 
 from aqt import mw
 
@@ -26,8 +29,6 @@ vendor_dir = os.path.join(addon_dir, "vendor", get_platform_specific_vendor())
 sys.path.append(vendor_dir)
 
 from .config_manager import ConfigManager
-
-import openai
 from .anthropic_client import SimpleAnthropicClient
 from .gemini_client import GeminiClient
 from html import unescape
@@ -68,22 +69,51 @@ def send_prompt_to_llm(prompt):
 
     try:
         print("Request to API: ", prompt)
+        def _http_chat_completion(base_url, api_key, model, messages, timeout, extra_headers=None):
+            url = base_url.rstrip("/") + "/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+            if extra_headers:
+                headers.update(extra_headers)
+
+            payload = {
+                "model": model,
+                "messages": messages,
+            }
+
+            data = json.dumps(payload).encode("utf-8")
+            request = urllib.request.Request(url, data=data, headers=headers, method="POST")
+
+            try:
+                with urllib.request.urlopen(request, timeout=timeout) as response:
+                    body = response.read().decode("utf-8", errors="replace")
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"HTTP {e.code} from {base_url}: {err_body}")
+            except urllib.error.URLError as e:
+                raise RuntimeError(f"Network error contacting {base_url}: {e}")
+
+            data = json.loads(body)
+
+            if isinstance(data, dict) and data.get("error"):
+                err = data["error"]
+                msg = err.get("message") if isinstance(err, dict) else str(err)
+                raise RuntimeError(f"API error from {base_url}: {msg}")
+
+            return data["choices"][0]["message"]["content"].strip()
+
         def try_openai_call():
-            client = openai.OpenAI(
-                api_key=config['apiKey'],  # This is the default and can be omitted
-                timeout=net_timeout
-            )
-            response = client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-                model=config.get('openaiModel') or 'gpt-4o-mini',
+            response = _http_chat_completion(
+                base_url="https://api.openai.com/v1",
+                api_key=config["apiKey"],
+                model=config.get("openaiModel") or "gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                timeout=net_timeout,
             )
             print("Response from OpenAI:", response)
-            return response.choices[0].message.content.strip()
+            return response
             
         def try_anthropic_call():
             client = SimpleAnthropicClient(
@@ -104,34 +134,30 @@ def send_prompt_to_llm(prompt):
             return response.strip()
 
         def try_openrouter_call():
-            client = openai.OpenAI(
+            response = _http_chat_completion(
                 base_url="https://openrouter.ai/api/v1",
-                api_key=config['openrouterKey'],
-                timeout=net_timeout
-            )
-            response = client.chat.completions.create(
+                api_key=config["openrouterKey"],
+                model=config.get("openrouterModel") or "google/gemini-2.0-flash-lite-001",
                 messages=[{"role": "user", "content": prompt}],
-                model=config.get('openrouterModel') or 'google/gemini-2.0-flash-lite-001',
+                timeout=net_timeout,
                 extra_headers={
                     "HTTP-Referer": "https://ankiweb.net/",
                     "X-Title": "IntelliFiller Anki Addon",
-                }
+                },
             )
             print("Response from OpenRouter:", response)
-            return response.choices[0].message.content.strip()
+            return response
 
         def try_custom_call():
-            client = openai.OpenAI(
-                base_url=config['customUrl'],
-                api_key=config['customKey'],
-                timeout=net_timeout
-            )
-            response = client.chat.completions.create(
+            response = _http_chat_completion(
+                base_url=config["customUrl"],
+                api_key=config["customKey"],
+                model=config.get("customModel") or "my-model",
                 messages=[{"role": "user", "content": prompt}],
-                model=config.get('customModel') or 'my-model',
+                timeout=net_timeout,
             )
             print("Response from Custom Provider:", response)
-            return response.choices[0].message.content.strip()
+            return response
 
         try:
             if config['selectedApi'] == 'anthropic':
