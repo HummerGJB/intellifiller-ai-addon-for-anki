@@ -4,7 +4,25 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) 
 [![AnkiWeb](https://img.shields.io/badge/AnkiWeb-1149226090-blue)](https://ankiweb.net/shared/info/1149226090)
 
-This is an enhanced version of the [IntelliFiller](https://github.com/ganqqwerty/intellifiller-ai-addon-for-anki) addon for Anki, allowing you to automatically fill note fields using various Large Language Models (LLMs).
+## Fork Notice & Attribution
+
+This repository is a **fork of the original [IntelliFiller AI addon for Anki](https://github.com/ganqqwerty/intellifiller-ai-addon-for-anki)**, created by **ganqqwerty**. Their foundational work made this project possible, and this fork explicitly credits and builds upon their efforts. Please refer to the original project for the initial implementation and history.
+
+This fork enhances the original IntelliFiller addon, allowing you to automatically fill note fields using various Large Language Models (LLMs).
+
+## New Features in This Fork
+
+The following additions are the key enhancements introduced in this fork compared to the original project:
+
+* **Expanded multi-provider support**: Added integrations for **Anthropic**, **Google Gemini**, **OpenRouter**, and **Ollama**, alongside OpenAI, to broaden model choices.  
+* **Custom OpenAI-compatible endpoints**: Support for self-hosted or third-party APIs that follow the OpenAI schema, enabling local LLM usage.  
+* **Configurable model presets**: Easier switching among named models (e.g., GPT-4o, Claude 3.5 Sonnet, Gemini 1.5 Pro).  
+* **Smart batch processing improvements**: Bulk selection processing with configurable fixed/random delays, execution queues, pause/resume, and live progress tracking.  
+* **Flexible prompt templating and multi-field updates**: Prompt placeholders and JSON responses to update multiple fields in one run.  
+* **Advanced prompt management UI**: Master-detail prompt editor with save/reuse workflows for faster iteration.  
+* **Encrypted, automatic backups**: Secure backups of settings and prompts to protect user configurations.  
+
+Each item above reflects the enhancements added in this fork while preserving the original project's core functionality.
 
 For a detailed history of changes, please view the [release-notes.md](release-notes.md) file or the [Releases Page](https://github.com/voothi/20251206123938-intellifiller-ai-addon-for-anki/releases).
 
@@ -25,6 +43,8 @@ For a detailed history of changes, please view the [release-notes.md](release-no
 
 ## Table of Contents
 
+- [Fork Notice & Attribution](#fork-notice--attribution)
+- [New Features in This Fork](#new-features-in-this-fork)
 - [Features](#features)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
