@@ -279,6 +279,11 @@ class SettingsWindow(QDialog, Ui_SettingsWindow):
         self.promptPinnedCheckbox.clicked.connect(self.update_current_prompt_pinned)
         self.promptResponseFormat.currentTextChanged.connect(self.update_current_prompt_format)
         self.promptTargetField.textChanged.connect(self.update_current_prompt_target)
+        self.promptProviderOverride.currentIndexChanged.connect(self.update_current_prompt_provider)
+        self.promptModelOverride.textChanged.connect(self.update_current_prompt_model)
+        self.promptSystemPrompt.textChanged.connect(self.update_current_prompt_system)
+        self.promptTemperature.valueChanged.connect(self.update_current_prompt_temperature)
+        self.promptMaxTokens.valueChanged.connect(self.update_current_prompt_max_tokens)
         self.promptFieldMapping.textChanged.connect(self.update_current_prompt_mapping)
         self.promptText.textChanged.connect(self.update_current_prompt_text)
 
@@ -400,6 +405,11 @@ class SettingsWindow(QDialog, Ui_SettingsWindow):
         self.promptPinnedCheckbox.blockSignals(True)
         self.promptResponseFormat.blockSignals(True)
         self.promptTargetField.blockSignals(True)
+        self.promptProviderOverride.blockSignals(True)
+        self.promptModelOverride.blockSignals(True)
+        self.promptSystemPrompt.blockSignals(True)
+        self.promptTemperature.blockSignals(True)
+        self.promptMaxTokens.blockSignals(True)
         self.promptFieldMapping.blockSignals(True)
         self.promptText.blockSignals(True)
 
@@ -409,6 +419,11 @@ class SettingsWindow(QDialog, Ui_SettingsWindow):
             self.promptPinnedCheckbox.setChecked(False)
             self.promptResponseFormat.setCurrentIndex(0) # Text
             self.promptTargetField.clear()
+            self.promptProviderOverride.setCurrentIndex(0)
+            self.promptModelOverride.clear()
+            self.promptSystemPrompt.clear()
+            self.promptTemperature.setValue(-1.0)
+            self.promptMaxTokens.setValue(-1)
             self.promptFieldMapping.clear()
             self.promptText.clear()
         else:
@@ -423,6 +438,18 @@ class SettingsWindow(QDialog, Ui_SettingsWindow):
             self.update_prompt_ui_visibility(fmt)
 
             self.promptTargetField.setText(prompt.get("targetField", ""))
+
+            provider_override = prompt.get("providerOverride", "")
+            provider_index = self.promptProviderOverride.findData(provider_override)
+            if provider_index == -1:
+                provider_index = 0
+            self.promptProviderOverride.setCurrentIndex(provider_index)
+            self.promptModelOverride.setText(prompt.get("modelOverride", ""))
+            self.promptSystemPrompt.setPlainText(prompt.get("systemPrompt", ""))
+            temperature = prompt.get("temperature")
+            self.promptTemperature.setValue(temperature if isinstance(temperature, (int, float)) else -1.0)
+            max_tokens = prompt.get("maxTokens")
+            self.promptMaxTokens.setValue(max_tokens if isinstance(max_tokens, int) else -1)
             
             mapping = prompt.get("fieldMapping", {})
             mapping_text = ""
@@ -436,6 +463,11 @@ class SettingsWindow(QDialog, Ui_SettingsWindow):
         self.promptPinnedCheckbox.blockSignals(False)
         self.promptResponseFormat.blockSignals(False)
         self.promptTargetField.blockSignals(False)
+        self.promptProviderOverride.blockSignals(False)
+        self.promptModelOverride.blockSignals(False)
+        self.promptSystemPrompt.blockSignals(False)
+        self.promptTemperature.blockSignals(False)
+        self.promptMaxTokens.blockSignals(False)
         self.promptFieldMapping.blockSignals(False)
         self.promptText.blockSignals(False)
 
@@ -489,6 +521,49 @@ class SettingsWindow(QDialog, Ui_SettingsWindow):
         row = self.promptsList.currentRow()
         if row >= 0:
             self.prompts[row]["targetField"] = text
+
+    def update_current_prompt_provider(self):
+        row = self.promptsList.currentRow()
+        if row >= 0:
+            value = self.promptProviderOverride.currentData()
+            if value:
+                self.prompts[row]["providerOverride"] = value
+            else:
+                self.prompts[row].pop("providerOverride", None)
+
+    def update_current_prompt_model(self, text):
+        row = self.promptsList.currentRow()
+        if row >= 0:
+            text = text.strip()
+            if text:
+                self.prompts[row]["modelOverride"] = text
+            else:
+                self.prompts[row].pop("modelOverride", None)
+
+    def update_current_prompt_system(self):
+        row = self.promptsList.currentRow()
+        if row >= 0:
+            text = self.promptSystemPrompt.toPlainText().strip()
+            if text:
+                self.prompts[row]["systemPrompt"] = text
+            else:
+                self.prompts[row].pop("systemPrompt", None)
+
+    def update_current_prompt_temperature(self, value):
+        row = self.promptsList.currentRow()
+        if row >= 0:
+            if value <= -1.0:
+                self.prompts[row].pop("temperature", None)
+            else:
+                self.prompts[row]["temperature"] = float(value)
+
+    def update_current_prompt_max_tokens(self, value):
+        row = self.promptsList.currentRow()
+        if row >= 0:
+            if value <= -1:
+                self.prompts[row].pop("maxTokens", None)
+            else:
+                self.prompts[row]["maxTokens"] = int(value)
 
     def update_current_prompt_mapping(self):
         row = self.promptsList.currentRow()

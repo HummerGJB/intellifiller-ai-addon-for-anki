@@ -530,7 +530,7 @@ def enrich_without_editor(nid_or_note, prompt_config):
         note = mw.col.get_note(nid_or_note)
         
     prompt = create_prompt(note, prompt_config)
-    response = send_prompt_to_llm(prompt)
+    response = send_prompt_to_llm(prompt, prompt_config)
     
     # Delegate application logic
     apply_response_to_note(note, prompt_config, response, is_editor=False)

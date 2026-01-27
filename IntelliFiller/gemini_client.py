@@ -9,7 +9,7 @@ class GeminiClient:
         self.model = model
         self.base_url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
 
-    def generate_content(self, prompt, timeout=60.0):
+    def generate_content(self, prompt, system_prompt=None, temperature=None, max_tokens=None, timeout=60.0):
         headers = {
             "Content-Type": "application/json"
         }
@@ -19,6 +19,15 @@ class GeminiClient:
                 "parts": [{"text": prompt}]
             }]
         }
+        if system_prompt:
+            data["systemInstruction"] = {"parts": [{"text": system_prompt}]}
+        generation_config = {}
+        if temperature is not None:
+            generation_config["temperature"] = temperature
+        if max_tokens is not None:
+            generation_config["maxOutputTokens"] = max_tokens
+        if generation_config:
+            data["generationConfig"] = generation_config
         
         query = urllib.parse.urlencode({"key": self.api_key})
         url = f"{self.base_url}?{query}"
