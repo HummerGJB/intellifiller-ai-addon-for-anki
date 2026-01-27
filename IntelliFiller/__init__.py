@@ -96,7 +96,7 @@ print("🔍 sys.path includes:", sys.path[:3])
 
 
 from .settings_editor import SettingsWindow
-from .process_notes import process_notes
+from .process_notes import process_notes, process_single_note
 from .run_prompt_dialog import RunPromptDialog
 from .config_manager import ConfigManager
 from .backup_manager import BackupManager
@@ -121,42 +121,22 @@ except ImportError as e:
 ConfigManager.migrate_legacy_config(__name__)
 
 def handle_edit_current_mode(editor: Editor, prompt_config):
+    if not editor or not editor.note:
+        showWarning("No active note in editor.")
+        return
+
     editCurrentWindow: EditCurrent = editor.parentWindow
-    common_fields = get_common_fields([editor.note.id])
+    common_fields = sorted(list(editor.note.keys()))
     dialog = RunPromptDialog(editCurrentWindow, common_fields, prompt_config)
     if dialog.exec() == QDialog.DialogCode.Accepted:
         result = dialog.get_result()
         updated_prompt_config = result["config"]
         if result["save"]:
             save_prompt_config(updated_prompt_config)
-        # Use process_notes even for single note in editor (it handles it safely now)
-        # We need to construct a browser-like object or pass the editor context?
-        # process_notes expects 'browser', but for single note editor mode we might need adaptation.
-        # Let's check process_notes signature.
-        # process_notes(browser, prompt_config, pipeline_name=None)
-        # It calls browser.selectedNotes() and uses browser.editor.
-        
-        # When in EditCurrent, we don't have the main browser object in the same state.
-        # However, process_notes is designed for Browser...
-        
-        # Wait, I refactored process_notes to rely on browser.selectedNotes().
-        # This breaks EditCurrent mode where there is no browser selection!
-        
-        # I need to FIX process_notes to handle non-browser contexts or add a helper for single note.
-        # Refactoring imports for now, but I might need to step back and add a helper in process_notes.
-        
-        # ACTUALLY: Let's re-add a wrapper or modify process_notes to accept list of notes directly?
-        # No, simpler: add a helper in __init__ or modify process_notes to be more flexible.
-        
-        # Let's look at how handle_edit_current_mode worked. It passed 'editor'.
-        # Previously: process_single_note(editor, updated_prompt_config)
-        
-        # My refactor of process_notes took 'browser'.
-        # If I want to support Edit Current, I must support passing an editor or note directly.
-        pass
+        process_single_note(editor, updated_prompt_config)
 
 def handle_add_cards_mode(editor: Editor, prompt_config):
-    pass
+    handle_edit_current_mode(editor, prompt_config)
 
 def save_prompt_config(updated_prompt_config):
     ConfigManager.save_prompt(updated_prompt_config)
@@ -229,8 +209,10 @@ def handle_browser_mode(editor, prompt_config):
 def create_run_prompt_dialog_from_editor(editor: Editor, prompt_config):
     if editor.editorMode == EditorMode.BROWSER:
         handle_browser_mode(editor, prompt_config)
-    elif editor.editorMode == EditorMode.EDIT_CURRENT or editor.editorMode == EditorMode.ADD_CARDS:
+    elif editor.editorMode == EditorMode.EDIT_CURRENT:
         handle_edit_current_mode(editor, prompt_config)
+    elif editor.editorMode == EditorMode.ADD_CARDS:
+        handle_add_cards_mode(editor, prompt_config)
 
 def add_context_menu_items(browser, menu):
     settings = ConfigManager.load_settings()
@@ -413,4 +395,3 @@ def setup_backup_timer():
 # but for Anki addons, we usually hook into profile loaded or just run at init if imported).
 # Since this __init__.py runs at Anki startup:
 setup_backup_timer()
-
