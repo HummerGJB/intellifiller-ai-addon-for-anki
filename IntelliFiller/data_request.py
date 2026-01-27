@@ -176,3 +176,99 @@ def send_prompt_to_llm(prompt):
     except Exception as e:
         # Re-raise to be handled by the caller (worker thread)
         raise e
+
+
+def test_connection(config, timeout=None):
+    """Run a lightweight request to validate the selected provider, key, and model."""
+    net_timeout = float(timeout if timeout is not None else config.get("netTimeout", 10.0))
+    prompt = "Connection test. Reply with 'ok'."
+
+    def _http_chat_completion(base_url, api_key, model, messages, timeout, extra_headers=None):
+        url = base_url.rstrip("/") + "/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        if extra_headers:
+            headers.update(extra_headers)
+
+        payload = {
+            "model": model,
+            "messages": messages,
+        }
+
+        data = json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(url, data=data, headers=headers, method="POST")
+
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                body = response.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"HTTP {e.code} from {base_url}: {err_body}")
+        except urllib.error.URLError as e:
+            raise RuntimeError(f"Network error contacting {base_url}: {e}")
+
+        data = json.loads(body)
+
+        if isinstance(data, dict) and data.get("error"):
+            err = data["error"]
+            msg = err.get("message") if isinstance(err, dict) else str(err)
+            raise RuntimeError(f"API error from {base_url}: {msg}")
+
+        return data["choices"][0]["message"]["content"].strip()
+
+    selected = config.get("selectedApi", "openai")
+
+    if selected == "anthropic":
+        client = SimpleAnthropicClient(
+            api_key=config.get("anthropicKey", ""),
+            model=config.get("anthropicModel") or "claude-haiku-4-5",
+        )
+        client.create_message(prompt, max_tokens=8, timeout=net_timeout)
+        return "Anthropic"
+
+    if selected == "gemini":
+        client = GeminiClient(
+            api_key=config.get("geminiKey", ""),
+            model=config.get("geminiModel") or "gemini-2.0-flash-lite-001",
+        )
+        client.generate_content(prompt, timeout=net_timeout)
+        return "Google Gemini"
+
+    if selected == "openrouter":
+        _http_chat_completion(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=config.get("openrouterKey", ""),
+            model=config.get("openrouterModel") or "google/gemini-2.0-flash-lite-001",
+            messages=[{"role": "user", "content": prompt}],
+            timeout=net_timeout,
+            extra_headers={
+                "HTTP-Referer": "https://ankiweb.net/",
+                "X-Title": "IntelliFiller Anki Addon",
+            },
+        )
+        return "OpenRouter"
+
+    if selected == "custom":
+        base_url = (config.get("customUrl") or "").strip()
+        if not base_url:
+            raise RuntimeError("Custom base URL is required for OpenAI-compatible providers.")
+        _http_chat_completion(
+            base_url=base_url,
+            api_key=config.get("customKey", ""),
+            model=config.get("customModel") or "my-model",
+            messages=[{"role": "user", "content": prompt}],
+            timeout=net_timeout,
+        )
+        return "OpenAI Compatible"
+
+    # Default: OpenAI
+    _http_chat_completion(
+        base_url="https://api.openai.com/v1",
+        api_key=config.get("apiKey", ""),
+        model=config.get("openaiModel") or "gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        timeout=net_timeout,
+    )
+    return "OpenAI"

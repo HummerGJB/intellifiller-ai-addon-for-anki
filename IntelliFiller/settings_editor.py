@@ -1,13 +1,31 @@
 from aqt import mw
 from aqt.qt import *
-from aqt.utils import showInfo
+from aqt.utils import showInfo, showWarning
 
 
 from .settings_window_ui import Ui_SettingsWindow
 from .config_manager import ConfigManager
 from .backup_manager import BackupManager
+from .data_request import test_connection
 import json
 import os
+
+
+class ConnectionTestWorker(QThread):
+    success = pyqtSignal(str)
+    failure = pyqtSignal(str)
+
+    def __init__(self, config, timeout):
+        super().__init__()
+        self.config = config
+        self.timeout = timeout
+
+    def run(self):
+        try:
+            provider = test_connection(self.config, timeout=self.timeout)
+            self.success.emit(provider)
+        except Exception as e:
+            self.failure.emit(str(e))
 
 
 
@@ -49,6 +67,9 @@ class SettingsWindow(QDialog, Ui_SettingsWindow):
         self.selectedApi.currentIndexChanged.connect(self.stackedWidget.setCurrentIndex)
         # Set initial page based on config
         self.stackedWidget.setCurrentIndex(self.selectedApi.currentIndex())
+
+        # Test Connection
+        self.testConnectionButton.clicked.connect(self.on_test_connection_clicked)
         
         self.setup_password_fields()
         
@@ -62,6 +83,7 @@ class SettingsWindow(QDialog, Ui_SettingsWindow):
         self.config_saved = False
         
         self.batchEnabled.toggled.connect(self.update_batch_ui_state)
+        self._connection_test_worker = None
 
     def update_batch_ui_state(self, checked):
         self.batchSize.setEnabled(checked)
@@ -74,6 +96,10 @@ class SettingsWindow(QDialog, Ui_SettingsWindow):
         enabled = self.batchEnabled.isChecked() and checked
         self.randomDelayMin.setEnabled(enabled)
         self.randomDelayMax.setEnabled(enabled)
+
+    def _set_test_button_state(self, enabled):
+        self.testConnectionButton.setEnabled(enabled)
+        self.testConnectionButton.setText("Test Connection" if enabled else "Testing...")
 
     def setup_password_fields(self):
         """Configures API key fields to be masked with a toggle button."""
@@ -109,6 +135,80 @@ class SettingsWindow(QDialog, Ui_SettingsWindow):
                 action.setIcon(self.icon_eye)
         
         action.triggered.connect(toggle)
+
+    def on_test_connection_clicked(self):
+        config = self._build_test_config()
+        validation_error = self._validate_test_config(config)
+        if validation_error:
+            showWarning(validation_error)
+            return
+
+        self._set_test_button_state(False)
+        timeout = float(self.netTimeout.value())
+
+        self._connection_test_worker = ConnectionTestWorker(config, timeout)
+        self._connection_test_worker.success.connect(self._on_connection_test_success)
+        self._connection_test_worker.failure.connect(self._on_connection_test_failure)
+        self._connection_test_worker.finished.connect(self._on_connection_test_finished)
+        self._connection_test_worker.start()
+
+    def _on_connection_test_success(self, provider_label):
+        showInfo(f"Connection succeeded using {provider_label}.")
+
+    def _on_connection_test_failure(self, error_message):
+        showWarning(f"Connection failed.\n\n{error_message}")
+
+    def _on_connection_test_finished(self):
+        self._set_test_button_state(True)
+        self._connection_test_worker = None
+
+    def _build_test_config(self):
+        return {
+            "selectedApi": self.selectedApi.currentData(),
+            "apiKey": self.apiKey.text().strip(),
+            "openaiModel": self.openaiModel.text().strip(),
+            "anthropicKey": self.anthropicKey.text().strip(),
+            "anthropicModel": self.anthropicModel.text().strip(),
+            "geminiKey": self.geminiKey.text().strip(),
+            "geminiModel": self.geminiModel.text().strip(),
+            "openrouterKey": self.openrouterKey.text().strip(),
+            "openrouterModel": self.openrouterModel.text().strip(),
+            "customUrl": self.customUrl.text().strip(),
+            "customKey": self.customKey.text().strip(),
+            "customModel": self.customModel.text().strip(),
+        }
+
+    def _validate_test_config(self, config):
+        selected = config.get("selectedApi", "openai")
+
+        if selected == "openai":
+            if not config.get("apiKey"):
+                return "OpenAI API key is required to test the connection."
+            return None
+
+        if selected == "anthropic":
+            if not config.get("anthropicKey"):
+                return "Anthropic API key is required to test the connection."
+            return None
+
+        if selected == "gemini":
+            if not config.get("geminiKey"):
+                return "Google Gemini API key is required to test the connection."
+            return None
+
+        if selected == "openrouter":
+            if not config.get("openrouterKey"):
+                return "OpenRouter API key is required to test the connection."
+            return None
+
+        if selected == "custom":
+            if not config.get("customUrl"):
+                return "OpenAI compatible base URL is required to test the connection."
+            if not config.get("customKey"):
+                return "OpenAI compatible API key is required to test the connection."
+            return None
+
+        return "Unknown API selection. Please choose a provider and try again."
 
     def setWindowSize(self):
         screen_size = QGuiApplication.primaryScreen().geometry()

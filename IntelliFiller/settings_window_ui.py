@@ -97,6 +97,14 @@ class Ui_SettingsWindow(object):
         self.pageCustomLayout.addRow(self.labelCustomModel, self.customModel)
         self.stackedWidget.addWidget(self.pageCustom)
 
+        # Test Connection button (applies to the selected provider)
+        self.testConnectionLayout = QtWidgets.QHBoxLayout()
+        self.testConnectionButton = QtWidgets.QPushButton(self.tabApi)
+        self.testConnectionButton.setObjectName("testConnectionButton")
+        self.testConnectionLayout.addWidget(self.testConnectionButton)
+        self.testConnectionLayout.addStretch()
+        self.tabApiLayout.addLayout(self.testConnectionLayout)
+
         # Emulation (Outside stack, always visible)
         self.emulationLayout = QtWidgets.QFormLayout()
         self.labelEmulate = QtWidgets.QLabel(self.tabApi)
@@ -412,6 +420,8 @@ class Ui_SettingsWindow(object):
         self.customKey.setPlaceholderText(_translate("SettingsWindow", "API Key"))
         self.labelCustomModel.setText(_translate("SettingsWindow", "OpenAI Compatible Model ID:"))
         self.customModel.setPlaceholderText(_translate("SettingsWindow", "Model ID"))
+
+        self.testConnectionButton.setText(_translate("SettingsWindow", "Test Connection"))
 
         self.labelEmulate.setText(_translate("SettingsWindow", "Emulate:"))
         self.emulate.setItemText(0, _translate("SettingsWindow", "yes"))
