@@ -315,6 +315,11 @@ def add_context_menu_items(browser, menu):
                 action.triggered.connect(lambda _, br=browser, pl=resolved_prompts, name=pipeline["pipelineName"]: process_notes(br, pl, name))
                 pipelines_menu.addAction(action)
 
+    submenu.addSeparator()
+    config_action = QAction("Configure IntelliFiller…", browser)
+    config_action.triggered.connect(open_settings)
+    submenu.addAction(config_action)
+
 
 def run_prompt_directly(browser, prompt_config):
     """Directly run the prompt without showing the dialog."""
@@ -340,6 +345,11 @@ def on_editor_button(editor):
         action.triggered.connect(lambda _, p=prompt: create_run_prompt_dialog_from_editor(editor, p))
         menu.addAction(action)
 
+    menu.addSeparator()
+    config_action = QAction("Configure IntelliFiller…", menu)
+    config_action.triggered.connect(open_settings)
+    menu.addAction(config_action)
+
     menu.exec(editor.widget.mapToGlobal(QPoint(0, 0)))
 
 
@@ -355,6 +365,20 @@ def on_setup_editor_buttons(buttons, editor):
     )
     buttons.append(btn)
     return buttons
+
+
+def setup_tools_menu_items():
+    tools_menu = mw.form.menuTools
+
+    config_action = QAction("IntelliFiller Configuration…", mw)
+    config_action.triggered.connect(open_settings)
+    tools_menu.addAction(config_action)
+
+    submenu = QMenu(ADDON_NAME, tools_menu)
+    submenu_config_action = QAction("Configure IntelliFiller…", submenu)
+    submenu_config_action.triggered.connect(open_settings)
+    submenu.addAction(submenu_config_action)
+    tools_menu.addMenu(submenu)
 
 
 addHook("browser.onContextMenu", add_context_menu_items)
@@ -395,3 +419,4 @@ def setup_backup_timer():
 # but for Anki addons, we usually hook into profile loaded or just run at init if imported).
 # Since this __init__.py runs at Anki startup:
 setup_backup_timer()
+setup_tools_menu_items()
