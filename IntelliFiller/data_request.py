@@ -49,7 +49,7 @@ def create_prompt(note, prompt_config):
     return prompt_template
 
 
-def send_prompt_to_llm(prompt, prompt_config=None):
+def send_prompt_to_llm(prompt):
     # Load settings first to get encryption key and API selector
     settings = ConfigManager.load_settings()
     encryption_key = settings.get("encryptionKey", "")
@@ -59,27 +59,7 @@ def send_prompt_to_llm(prompt, prompt_config=None):
     
     # Merge for easier access
     config = {**settings, **credentials}
-
-    prompt_config = prompt_config or {}
-    provider_override = prompt_config.get("providerOverride")
-    model_override = prompt_config.get("modelOverride")
-    system_prompt = prompt_config.get("systemPrompt")
-    temperature = prompt_config.get("temperature")
-    max_tokens = prompt_config.get("maxTokens")
-
-    if isinstance(temperature, str):
-        try:
-            temperature = float(temperature)
-        except ValueError:
-            temperature = None
-    if isinstance(max_tokens, str):
-        try:
-            max_tokens = int(max_tokens)
-        except ValueError:
-            max_tokens = None
-
-    selected_api = provider_override or config.get("selectedApi", "openai")
-
+    
     # Get timeout from settings (default 10s)
     net_timeout = float(config.get("netTimeout", 10.0))
 
@@ -89,7 +69,7 @@ def send_prompt_to_llm(prompt, prompt_config=None):
 
     try:
         print("Request to API: ", prompt)
-        def _http_chat_completion(base_url, api_key, model, messages, timeout, extra_headers=None, temperature=None, max_tokens=None):
+        def _http_chat_completion(base_url, api_key, model, messages, timeout, extra_headers=None):
             url = base_url.rstrip("/") + "/chat/completions"
             headers = {
                 "Authorization": f"Bearer {api_key}",
@@ -102,10 +82,6 @@ def send_prompt_to_llm(prompt, prompt_config=None):
                 "model": model,
                 "messages": messages,
             }
-            if temperature is not None:
-                payload["temperature"] = temperature
-            if max_tokens is not None:
-                payload["max_tokens"] = max_tokens
 
             data = json.dumps(payload).encode("utf-8")
             request = urllib.request.Request(url, data=data, headers=headers, method="POST")
@@ -128,22 +104,13 @@ def send_prompt_to_llm(prompt, prompt_config=None):
 
             return data["choices"][0]["message"]["content"].strip()
 
-        def _build_messages():
-            messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": prompt})
-            return messages
-
         def try_openai_call():
             response = _http_chat_completion(
                 base_url="https://api.openai.com/v1",
                 api_key=config["apiKey"],
-                model=model_override or config.get("openaiModel") or "gpt-4o-mini",
-                messages=_build_messages(),
+                model=config.get("openaiModel") or "gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
                 timeout=net_timeout,
-                temperature=temperature,
-                max_tokens=max_tokens,
             )
             print("Response from OpenAI:", response)
             return response
@@ -151,30 +118,18 @@ def send_prompt_to_llm(prompt, prompt_config=None):
         def try_anthropic_call():
             client = SimpleAnthropicClient(
                 api_key=config['anthropicKey'], 
-                model=model_override or config.get('anthropicModel') or 'claude-haiku-4-5'
+                model=config.get('anthropicModel') or 'claude-haiku-4-5'
             )
-            response = client.create_message(
-                prompt,
-                system_prompt=system_prompt,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                timeout=net_timeout,
-            )
+            response = client.create_message(prompt, timeout=net_timeout)
             print("Response from Anthropic:", response)
             return response.strip()
 
         def try_gemini_call():
             client = GeminiClient(
                 api_key=config['geminiKey'],
-                model=model_override or config.get('geminiModel') or 'gemini-2.0-flash-lite-001'
+                model=config.get('geminiModel') or 'gemini-2.0-flash-lite-001'
             )
-            response = client.generate_content(
-                prompt,
-                system_prompt=system_prompt,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                timeout=net_timeout,
-            )
+            response = client.generate_content(prompt, timeout=net_timeout)
             print("Response from Gemini:", response)
             return response.strip()
 
@@ -182,15 +137,13 @@ def send_prompt_to_llm(prompt, prompt_config=None):
             response = _http_chat_completion(
                 base_url="https://openrouter.ai/api/v1",
                 api_key=config["openrouterKey"],
-                model=model_override or config.get("openrouterModel") or "google/gemini-2.0-flash-lite-001",
-                messages=_build_messages(),
+                model=config.get("openrouterModel") or "google/gemini-2.0-flash-lite-001",
+                messages=[{"role": "user", "content": prompt}],
                 timeout=net_timeout,
                 extra_headers={
                     "HTTP-Referer": "https://ankiweb.net/",
                     "X-Title": "IntelliFiller Anki Addon",
                 },
-                temperature=temperature,
-                max_tokens=max_tokens,
             )
             print("Response from OpenRouter:", response)
             return response
@@ -199,23 +152,21 @@ def send_prompt_to_llm(prompt, prompt_config=None):
             response = _http_chat_completion(
                 base_url=config["customUrl"],
                 api_key=config["customKey"],
-                model=model_override or config.get("customModel") or "my-model",
-                messages=_build_messages(),
+                model=config.get("customModel") or "my-model",
+                messages=[{"role": "user", "content": prompt}],
                 timeout=net_timeout,
-                temperature=temperature,
-                max_tokens=max_tokens,
             )
             print("Response from Custom Provider:", response)
             return response
 
         try:
-            if selected_api == 'anthropic':
+            if config['selectedApi'] == 'anthropic':
                 return try_anthropic_call()
-            elif selected_api == 'gemini':
+            elif config['selectedApi'] == 'gemini':
                 return try_gemini_call()
-            elif selected_api == 'openrouter':
+            elif config['selectedApi'] == 'openrouter':
                 return try_openrouter_call()
-            elif selected_api == 'custom':
+            elif config['selectedApi'] == 'custom':
                 return try_custom_call()
             else:  # openai
                 return try_openai_call()

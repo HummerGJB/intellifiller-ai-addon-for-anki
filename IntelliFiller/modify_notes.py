@@ -24,5 +24,4 @@ def fill_field_for_note_in_editor(response, target_field, editor, overwrite):
 def fill_field_for_note_not_in_editor(response, note, target_field, overwrite):
     """Set response to the note."""
     format_response_and_fill_field(response, note, target_field, overwrite)
-    if getattr(note, "id", 0):
-        note.flush()
+    note.flush()

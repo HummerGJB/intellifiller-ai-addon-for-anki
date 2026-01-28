@@ -8,7 +8,7 @@ class SimpleAnthropicClient:
         self.model = model
         self.base_url = "https://api.anthropic.com/v1/messages"
         
-    def create_message(self, prompt, system_prompt=None, temperature=None, max_tokens=None, timeout=60.0):
+    def create_message(self, prompt, max_tokens=2000, timeout=60.0):
         headers = {
             "x-api-key": self.api_key,
             "anthropic-version": "2023-06-01",
@@ -17,13 +17,9 @@ class SimpleAnthropicClient:
         
         data = {
             "model": self.model,
-            "max_tokens": max_tokens or 2000,
+            "max_tokens": max_tokens,
             "messages": [{"role": "user", "content": prompt}]
         }
-        if system_prompt:
-            data["system"] = system_prompt
-        if temperature is not None:
-            data["temperature"] = temperature
         
         payload = json.dumps(data).encode("utf-8")
         request = urllib.request.Request(

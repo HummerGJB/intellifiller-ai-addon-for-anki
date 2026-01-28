@@ -169,33 +169,6 @@
             "type": "string",
             "description": "Field name where the GPT response should be stored."
           },
-          "providerOverride": {
-            "type": "string",
-            "enum": [
-              "openai",
-              "anthropic",
-              "gemini",
-              "openrouter",
-              "custom"
-            ],
-            "description": "Optional provider override for this prompt."
-          },
-          "modelOverride": {
-            "type": "string",
-            "description": "Optional model override for this prompt."
-          },
-          "systemPrompt": {
-            "type": "string",
-            "description": "Optional system prompt to send with this prompt."
-          },
-          "temperature": {
-            "type": "number",
-            "description": "Optional temperature override for this prompt."
-          },
-          "maxTokens": {
-            "type": "integer",
-            "description": "Optional max tokens override for this prompt."
-          },
           "responseFormat": {
             "type": "string",
             "enum": [
