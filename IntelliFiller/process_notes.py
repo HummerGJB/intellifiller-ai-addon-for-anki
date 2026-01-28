@@ -1,4 +1,4 @@
-from aqt.qt import QThread, pyqtSignal, QDialog, QVBoxLayout, QHBoxLayout, QProgressBar, QPushButton, QLabel, QLineEdit, Qt, QAction, QStyle, QApplication, QIcon, QTimer
+from aqt.qt import QThread, pyqtSignal, QDialog, QVBoxLayout, QHBoxLayout, QProgressBar, QPushButton, QLabel, QLineEdit, Qt, QAction, QStyle, QApplication, QIcon, QTimer, QTabWidget, QTableWidget, QTableWidgetItem, QAbstractItemView
 from aqt import mw
 from aqt.utils import showWarning
 
@@ -36,6 +36,11 @@ class MultipleNotesThreadWorker(QThread):
         self.browser = browser
         self.prompt_config = prompt_config
         self.has_shown_error = False
+        self.successes = []
+        self.skipped = []
+        self.json_failures = []
+        self.network_failures = []
+        self.max_network_retries = 3
         
         # Load Batch Settings
         settings = ConfigManager.load_settings()
@@ -65,6 +70,8 @@ class MultipleNotesThreadWorker(QThread):
         
         for i, item in enumerate(self.notes):
             self.update_activity()
+            note_id = item.id if isinstance(item, Note) else int(item)
+            deck_name = "Unknown Deck"
             # Check for pause before starting next item
             # Check state before processing
             while not self.run_permission:
@@ -114,6 +121,7 @@ class MultipleNotesThreadWorker(QThread):
                 self.status_update.emit(f"Resuming processing...")
 
             # Retry loop for the distinct note
+            net_retry_count = 0
             while True:
                 self.update_activity()
                 if self.isInterruptionRequested():
@@ -130,6 +138,7 @@ class MultipleNotesThreadWorker(QThread):
                             note = mw.col.get_note(item)
                     except Exception:
                         # If note deleted or not found, skip
+                        self._record_skip(note_id, deck_name, "Note deleted or not found")
                         break # Break retry loop, effectively skipping this note
                     
                     # Update Deck Name info
@@ -145,16 +154,21 @@ class MultipleNotesThreadWorker(QThread):
                     
                     # If we reached here, success!
                     self.update_activity()
+                    self.successes.append({
+                        "note_id": note_id,
+                        "deck": deck_name,
+                    })
                     break 
 
                 except Exception as e:
-                    err_str = str(e).lower()
+                    err_message = str(e)
+                    err_str = err_message.lower()
                     # Check for common network/timeout keywords
                     is_net_error = any(x in err_str for x in ["connect", "time", "network", "socket", "proxy", "50", "429"])
                     
                     # Logic: Immediate feedback, "Original Window", One time only.
                     if not self.has_shown_error:
-                        sys.stderr.write(f"IntelliFiller Error: {str(e)}")
+                        sys.stderr.write(f"IntelliFiller Error: {err_message}")
                         self.has_shown_error = True
                     
                     if is_net_error:
@@ -164,11 +178,18 @@ class MultipleNotesThreadWorker(QThread):
                         # Check cancel again before sleeping
                         if self.isInterruptionRequested():
                             break
+                        net_retry_count += 1
+                        if net_retry_count > self.max_network_retries:
+                            self._record_network_failure(note_id, deck_name, err_message, net_retry_count)
+                            break
                         time.sleep(3)
                         continue
                     else:
                         # Logic/Template error -> Skip note
-                        pass
+                        if isinstance(e, ValueError) and "Failed to parse JSON response" in err_message:
+                            self._record_json_failure(note_id, deck_name, err_message)
+                        else:
+                            self._record_skip(note_id, deck_name, err_message)
                     
                     # Store internally if needed, but we aren't showing a summary anymore
                     break
@@ -178,6 +199,132 @@ class MultipleNotesThreadWorker(QThread):
                 break
 
             self.progress_made.emit(i + 1)
+
+    def _record_skip(self, note_id, deck_name, reason):
+        self.skipped.append({
+            "note_id": note_id,
+            "deck": deck_name,
+            "reason": reason,
+        })
+
+    def _record_json_failure(self, note_id, deck_name, reason):
+        self.json_failures.append({
+            "note_id": note_id,
+            "deck": deck_name,
+            "reason": reason,
+        })
+
+    def _record_network_failure(self, note_id, deck_name, reason, retries):
+        self.network_failures.append({
+            "note_id": note_id,
+            "deck": deck_name,
+            "reason": reason,
+            "retries": retries,
+        })
+
+    def get_summary(self):
+        return {
+            "total": len(self.notes),
+            "successes": list(self.successes),
+            "skipped": list(self.skipped),
+            "json_failures": list(self.json_failures),
+            "network_failures": list(self.network_failures),
+        }
+
+
+class SummaryDialog(QDialog):
+    def __init__(self, parent, summary, prompt_config):
+        super().__init__(parent)
+        self.summary = summary
+        self.prompt_config = prompt_config
+
+        layout = QVBoxLayout()
+        header = QLabel(
+            f"Processed: {summary['total']} | "
+            f"Success: {len(summary['successes'])} | "
+            f"Skipped: {len(summary['skipped'])} | "
+            f"JSON failures: {len(summary['json_failures'])} | "
+            f"Network failures: {len(summary['network_failures'])}"
+        )
+        layout.addWidget(header)
+
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self._build_table(summary["successes"], include_error=False), "Successful")
+        self.tabs.addTab(self._build_table(summary["skipped"], include_error=True), "Skipped")
+        self.tabs.addTab(self._build_table(summary["json_failures"], include_error=True), "JSON Failures")
+        self.tabs.addTab(self._build_table(summary["network_failures"], include_error=True, include_retries=True), "Network Failures")
+        layout.addWidget(self.tabs)
+
+        button_layout = QHBoxLayout()
+        self.retry_button = QPushButton("Retry Selected")
+        self.retry_button.clicked.connect(self.retry_selected)
+        self.retry_button.setAutoDefault(False)
+        button_layout.addWidget(self.retry_button)
+
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(self.close)
+        close_button.setAutoDefault(False)
+        button_layout.addWidget(close_button)
+        layout.addLayout(button_layout)
+
+        self.setLayout(layout)
+        self.setWindowTitle("IntelliFiller Summary")
+
+    def _build_table(self, items, include_error=True, include_retries=False):
+        headers = ["Note ID", "Deck"]
+        if include_error:
+            headers.append("Reason")
+        if include_retries:
+            headers.append("Retries")
+
+        table = QTableWidget(0, len(headers))
+        table.setHorizontalHeaderLabels(headers)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+
+        for entry in items:
+            row = table.rowCount()
+            table.insertRow(row)
+            note_item = QTableWidgetItem(str(entry.get("note_id", "")))
+            note_item.setData(Qt.ItemDataRole.UserRole, entry.get("note_id"))
+            table.setItem(row, 0, note_item)
+            table.setItem(row, 1, QTableWidgetItem(entry.get("deck", "")))
+            column = 2
+            if include_error:
+                table.setItem(row, column, QTableWidgetItem(entry.get("reason", "")))
+                column += 1
+            if include_retries:
+                table.setItem(row, column, QTableWidgetItem(str(entry.get("retries", ""))))
+
+        table.resizeColumnsToContents()
+        return table
+
+    def retry_selected(self):
+        current_widget = self.tabs.currentWidget()
+        if not isinstance(current_widget, QTableWidget):
+            return
+
+        selected_rows = current_widget.selectionModel().selectedRows()
+        if not selected_rows:
+            showWarning("Select a note to retry.")
+            return
+
+        note_ids = []
+        for row in selected_rows:
+            item = current_widget.item(row.row(), 0)
+            if item:
+                note_id = item.data(Qt.ItemDataRole.UserRole)
+                if note_id is not None:
+                    note_ids.append(note_id)
+
+        if not note_ids:
+            showWarning("No note IDs found for retry.")
+            return
+
+        retry_dialog = ProgressDialog(self.parent())
+        retry_dialog.run_task(note_ids, self.prompt_config)
+        self.close()
 
 
 class ProgressDialog(QDialog):
@@ -342,6 +489,9 @@ class ProgressDialog(QDialog):
     def on_worker_finished(self):
         self.update_progress(
             self.progress_bar.maximum())  # when the worker is finished, set the progress bar to maximum
+        summary = None
+        if self.worker:
+            summary = self.worker.get_summary()
         
         # If we are in browser, reset
         # If we are in editor single mode?
@@ -352,6 +502,9 @@ class ProgressDialog(QDialog):
         if self.watchdog_timer:
             self.watchdog_timer.stop()
         self.close()  # close the dialog when the worker finishes
+        if summary:
+            summary_dialog = SummaryDialog(self.parent(), summary, self.worker.prompt_config)
+            summary_dialog.exec()
 
     def check_worker_activity(self):
         if not self.worker or not self.worker.isRunning() or self.worker.is_user_paused or not self.worker.run_permission:
